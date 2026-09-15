@@ -5,14 +5,51 @@ import * as path from 'path';
 // This method is called when your extension is activated
 export function activate(context: vscode.ExtensionContext) {
 	const buildDisposable = vscode.commands.registerCommand('autobuilder-for-c.buildProject', async () => {
-		// Выводим сообщение о начале процесса
-		vscode.window.showInformationMessage('Сохранение файлов перед сборкой...');
-
 		// Вызываем команду VS Code, которая сохраняет все измененные файлы
 		// await заставляет плагин дождаться, пока все файлы сохранятся
 		await vscode.commands.executeCommand('workbench.action.files.saveAll');
 
-		
+		// Проверяем, открыта ли рабочая папка
+		const workspaceFolders = vscode.workspace.workspaceFolders;
+		if (!workspaceFolders) {
+			vscode.window.showErrorMessage('Ошибка: Рабочая папка не открыта в VS Code');
+			return;
+		}
+
+		const rootPath = workspaceFolders[0].uri.fsPath;
+
+		// Проверяем наличие главных файлов для сборки
+		const cmakePath = path.join(rootPath, 'CMakeLists.txt');
+		const mainCppPath = path.join(rootPath, 'bin', 'main.cpp');
+
+		if (!fs.existsSync(cmakePath) || !fs.existsSync(mainCppPath)) {
+			vscode.window.showErrorMessage('Ошибка сборки: В проекте отсутствуют необходимые CMakeLists.txt или bin/main.cpp. Рекомендуется проверить структуру проекта или использовать комманду CMake: Create basic project structure');
+			return;
+		}
+
+		// Находим или создаем терминал нашего плагина
+		let terminal = vscode.window.activeTerminal;
+
+		// Если ни одного терминала вообще не открыто, создаем терминал
+		if (!terminal) {
+			terminal = vscode.window.createTerminal();
+		}
+
+		// Показываем терминал на экране
+		terminal.show();
+
+		// Проверка папки build и выбор сценария действий
+		const buildFolderPath = path.join(rootPath, 'build');
+
+		if (fs.existsSync(buildFolderPath)) {
+			// Если папка build уже создана — запускаем сборку
+			vscode.window.showInformationMessage('Папка build найдена. Запускается быстрая сборка...');
+			terminal.sendText('cmake --build build');
+		} else {
+			// Если папки build нет — сначала конфигурируем CMake (-B build), затем собираем
+			vscode.window.showInformationMessage('Папка build не найдена. Полная конфигурация и сборка...');
+			terminal.sendText('cmake -B build && cmake --build build');
+		}
 	});
 
 	// Регистрация команды, которая создаёт базовую структуру проекта: папки, файлы cmake, main.cpp и README.md
@@ -26,6 +63,20 @@ export function activate(context: vscode.ExtensionContext) {
 
 		// Получаем абсолютный путь к открытой папке
 		const rootPath = workspaceFolders[0].uri.fsPath;
+
+		// // проверка директории на пустоту
+		// try {
+		// 	const directoryContents = fs.readdirSync(rootPath);
+
+		// 	// Если в папке уже есть файлы или другие папки, то выдаем ошибку и останавливаем плагин
+		// 	if (directoryContents.length > 0) {
+		// 		vscode.window.showErrorMessage('Ошибка: Папка проекта не пуста! Генерация структуры невозможна.');
+		// 		return;
+		// 	}
+		// } catch (error) {
+		// 	vscode.window.showErrorMessage('Не удалось прочитать содержимое директории.');
+		// 	return;
+		// }
 
 		// Список всех директорий, которые необходимо создать
 		const foldersToCreate = ['docs', 'lib', 'bin', 'test'];
