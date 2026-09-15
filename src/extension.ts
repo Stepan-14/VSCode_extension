@@ -27,6 +27,20 @@ export function activate(context: vscode.ExtensionContext) {
 			return;
 		}
 
+		// Получение названия проекта из CMakeLists.txt
+		let projectName = 'MyProject'; // Имя по умолчанию
+		try {
+			const cmakeContent = fs.readFileSync(cmakePath, 'utf8');
+			// Ищем строчку вида project(ИмяПроекта)
+			const match = cmakeContent.match(/project\s*\(\s*([a-zA-Z0-9_-]+)\s*\)/i);
+
+			if (match && match[1]) {
+				projectName = match[1]; // Забираем то, что попало в круглые скобки
+			}
+		} catch (error) {
+			console.error('Не удалось прочитать CMakeLists.txt:', error);
+		}
+
 		// Находим или создаем терминал нашего плагина
 		let terminal = vscode.window.activeTerminal;
 
@@ -38,17 +52,32 @@ export function activate(context: vscode.ExtensionContext) {
 		// Показываем терминал на экране
 		terminal.show();
 
+		// В зависимости от операционной системы запускаем исполняемый файл
+		let runCommand = '';
+		let cdCommand = '';
+		if (process.platform === 'win32') {
+			// Для Windows добавляем .exe
+			runCommand = `build\\bin\\${projectName}.exe`;
+		} else {
+			// Для Linux и macOS добавляем ./ в начале
+			runCommand = `./build/bin/${projectName}`;
+		}
+		// Gереход в корень: pushd запомнит, где мы стояли, и перейдет в rootPath
+		const goRootCommand = `pushd "${rootPath}"`;
+
+		// Возврат обратно: popd вернет нас в ту папку, откуда мы yfxbyfkb
+		const goBackCommand = `popd`;
+
 		// Проверка папки build и выбор сценария действий
 		const buildFolderPath = path.join(rootPath, 'build');
-
 		if (fs.existsSync(buildFolderPath)) {
 			// Если папка build уже создана — запускаем сборку
 			vscode.window.showInformationMessage('Папка build найдена. Запускается быстрая сборка...');
-			terminal.sendText('cmake --build build');
+			terminal.sendText(`${goRootCommand} && cmake --build build && ${runCommand} && ${goBackCommand}`);
 		} else {
 			// Если папки build нет — сначала конфигурируем CMake (-B build), затем собираем
 			vscode.window.showInformationMessage('Папка build не найдена. Полная конфигурация и сборка...');
-			terminal.sendText('cmake -B build && cmake --build build');
+			terminal.sendText(`${goRootCommand} && cmake -B build && cmake --build build && ${runCommand} && ${goBackCommand}`);
 		}
 	});
 
@@ -63,20 +92,6 @@ export function activate(context: vscode.ExtensionContext) {
 
 		// Получаем абсолютный путь к открытой папке
 		const rootPath = workspaceFolders[0].uri.fsPath;
-
-		// // проверка директории на пустоту
-		// try {
-		// 	const directoryContents = fs.readdirSync(rootPath);
-
-		// 	// Если в папке уже есть файлы или другие папки, то выдаем ошибку и останавливаем плагин
-		// 	if (directoryContents.length > 0) {
-		// 		vscode.window.showErrorMessage('Ошибка: Папка проекта не пуста! Генерация структуры невозможна.');
-		// 		return;
-		// 	}
-		// } catch (error) {
-		// 	vscode.window.showErrorMessage('Не удалось прочитать содержимое директории.');
-		// 	return;
-		// }
 
 		// Список всех директорий, которые необходимо создать
 		const foldersToCreate = ['docs', 'lib', 'bin', 'test'];
