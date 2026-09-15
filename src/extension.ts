@@ -17,6 +17,63 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 
 		const rootPath = workspaceFolders[0].uri.fsPath;
+		
+		// Находим или создаем терминал нашего плагина
+		let terminal = vscode.window.activeTerminal;
+
+		// Если ни одного терминала вообще не открыто, создаем терминал
+		if (!terminal) {
+			terminal = vscode.window.createTerminal();
+		}
+
+		// Показываем терминал на экране
+		terminal.show();
+
+		// Проверяем, существует ли CMakeLists.txt в открытом воркспейсе
+		const activeEditor = vscode.window.activeTextEditor;
+		let hasCmakeLists = false;
+		if (workspaceFolders) {
+			if (fs.existsSync(path.join(rootPath, 'CMakeLists.txt'))) {
+				hasCmakeLists = true;
+			}
+		}
+
+		// Если файл одиночный (без файловой структуры)
+		if (!hasCmakeLists) {
+			if (!activeEditor) {
+				vscode.window.showErrorMessage('Ошибка: Нет активного файла для компиляции!');
+				return;
+			}
+
+			const filePath = activeEditor.document.uri.fsPath;
+			const fileExt = path.extname(filePath);
+
+			// Проверяем, С/С++ ли это файл
+			if (fileExt !== '.cpp' && fileExt !== '.c' && fileExt !== '.cc') {
+				vscode.window.showErrorMessage('Ошибка: Активный файл не является исходным кодом C/C++');
+				return;
+			}
+
+			const fileDir = path.dirname(filePath);
+			const fileNameWithoutExt = path.basename(filePath, fileExt);
+
+			// Подготавливаем имена для исполняемого файла под разные ОС
+			let outputBinary = fileNameWithoutExt;
+			let runCommand = `./${fileNameWithoutExt}`;
+
+			if (process.platform === 'win32') {
+				outputBinary = `${fileNameWithoutExt}.exe`;
+				runCommand = `${fileNameWithoutExt}.exe`;
+			}
+
+			// Цепочка: Переходим в папку с файлом -> компилируем -> запускаем -> возвращаемся
+			const goFileDir = `pushd "${fileDir}"`;
+			const compileCmd = `clang++ "${filePath}" -o "${outputBinary}"`;
+			const goBack = `popd`;
+
+			terminal.sendText(`${goFileDir} && ${compileCmd} && ${runCommand} && ${goBack}`);
+			return;
+		}
 
 		// Проверяем наличие главных файлов для сборки
 		const cmakePath = path.join(rootPath, 'CMakeLists.txt');
@@ -41,20 +98,8 @@ export function activate(context: vscode.ExtensionContext) {
 			console.error('Не удалось прочитать CMakeLists.txt:', error);
 		}
 
-		// Находим или создаем терминал нашего плагина
-		let terminal = vscode.window.activeTerminal;
-
-		// Если ни одного терминала вообще не открыто, создаем терминал
-		if (!terminal) {
-			terminal = vscode.window.createTerminal();
-		}
-
-		// Показываем терминал на экране
-		terminal.show();
-
 		// В зависимости от операционной системы запускаем исполняемый файл
 		let runCommand = '';
-		let cdCommand = '';
 		if (process.platform === 'win32') {
 			// Для Windows добавляем .exe
 			runCommand = `build\\bin\\${projectName}.exe`;
