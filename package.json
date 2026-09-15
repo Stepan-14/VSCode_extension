@@ -9,6 +9,10 @@
   "categories": [
     "Programming Languages"
   ],
+  "author": {
+    "name": "Stepan"
+  },
+  "icon": "img/result_icon.png",
   "activationEvents": [],
   "main": "./out/extension.js",
   "contributes": {
