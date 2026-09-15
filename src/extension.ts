@@ -134,7 +134,7 @@ export function activate(context: vscode.ExtensionContext) {
 			// Если папка build уже создана — запускаем сборку
 			vscode.window.showInformationMessage('Папка build найдена. Запускается быстрая сборка...');
 			// terminal.sendText(`${goRootCommand} && cmake --build build && ${runCommand} && ${goBackCommand}`);
-			buildTerminal.sendText(`${goRootCommand} && cmake --build build && ${runCommand}`);
+			runTerminal.sendText(`${goRootCommand} && cmake --build build && ${runCommand}`);
 			buildTerminal.sendText(`${goBackCommand}`);
 		} else {
 			// Если папки build нет — сначала конфигурируем CMake (-B build), затем собираем
