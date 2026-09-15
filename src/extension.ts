@@ -17,17 +17,30 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 
 		const rootPath = workspaceFolders[0].uri.fsPath;
-		
-		// Находим или создаем терминал нашего плагина
-		let terminal = vscode.window.activeTerminal;
 
-		// Если ни одного терминала вообще не открыто, создаем терминал
-		if (!terminal) {
-			terminal = vscode.window.createTerminal();
+		// Терминал для сборки (используем текущий активный или создаем дефолтный)
+		let buildTerminal = vscode.window.terminals.find(t => t.name === 'ProgramBuild');
+		if (!buildTerminal) {
+			buildTerminal = vscode.window.createTerminal('ProgramBuild');
 		}
 
-		// Показываем терминал на экране
-		terminal.show();
+		// Терминал для запуска (ищем уже созданный нами ранее или открываем новый чистый)
+		let runTerminal = vscode.window.terminals.find(t => t.name === 'Program');
+		if (!runTerminal) {
+			runTerminal = vscode.window.createTerminal('Program');
+		}
+		runTerminal.show();
+
+		// // Находим или создаем терминал нашего плагина
+		// let terminal = vscode.window.activeTerminal;
+
+		// // Если ни одного терминала вообще не открыто, создаем терминал
+		// if (!terminal) {
+		// 	terminal = vscode.window.createTerminal();
+		// }
+
+		// // Показываем терминал на экране
+		// terminal.show();
 
 		// Проверяем, существует ли CMakeLists.txt в открытом воркспейсе
 		const activeEditor = vscode.window.activeTextEditor;
@@ -71,7 +84,9 @@ export function activate(context: vscode.ExtensionContext) {
 			const compileCmd = `clang++ "${filePath}" -o "${outputBinary}"`;
 			const goBack = `popd`;
 
-			terminal.sendText(`${goFileDir} && ${compileCmd} && ${runCommand} && ${goBack}`);
+			// terminal.sendText(`${goFileDir} && ${compileCmd} && ${runCommand} && ${goBack}`);
+			runTerminal.sendText(`${goFileDir} && ${compileCmd} && ${runCommand}`);
+			buildTerminal.sendText(`${goBack}`);
 			return;
 		}
 
@@ -118,11 +133,15 @@ export function activate(context: vscode.ExtensionContext) {
 		if (fs.existsSync(buildFolderPath)) {
 			// Если папка build уже создана — запускаем сборку
 			vscode.window.showInformationMessage('Папка build найдена. Запускается быстрая сборка...');
-			terminal.sendText(`${goRootCommand} && cmake --build build && ${runCommand} && ${goBackCommand}`);
+			// terminal.sendText(`${goRootCommand} && cmake --build build && ${runCommand} && ${goBackCommand}`);
+			buildTerminal.sendText(`${goRootCommand} && cmake --build build && ${runCommand}`);
+			buildTerminal.sendText(`${goBackCommand}`);
 		} else {
 			// Если папки build нет — сначала конфигурируем CMake (-B build), затем собираем
 			vscode.window.showInformationMessage('Папка build не найдена. Полная конфигурация и сборка...');
-			terminal.sendText(`${goRootCommand} && cmake -B build && cmake --build build && ${runCommand} && ${goBackCommand}`);
+			// terminal.sendText(`${goRootCommand} && cmake -B build && cmake --build build && ${runCommand} && ${goBackCommand}`);
+			runTerminal.sendText(`${goRootCommand} && cmake -B build && cmake --build build && ${runCommand}`);
+			buildTerminal.sendText(`${goBackCommand}`);
 		}
 	});
 
