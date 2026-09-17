@@ -5,10 +5,6 @@ import * as path from 'path';
 // This method is called when your extension is activated
 export function activate(context: vscode.ExtensionContext) {
 	const buildDisposable = vscode.commands.registerCommand('autobuilder-for-c.buildProject', async () => {
-		// Вызываем команду VS Code, которая сохраняет все измененные файлы
-		// await заставляет плагин дождаться, пока все файлы сохранятся
-		await vscode.commands.executeCommand('workbench.action.files.saveAll');
-
 		// Проверяем, открыта ли рабочая папка
 		const workspaceFolders = vscode.workspace.workspaceFolders;
 		if (!workspaceFolders) {
@@ -17,105 +13,260 @@ export function activate(context: vscode.ExtensionContext) {
 		}
 
 		const rootPath = workspaceFolders[0].uri.fsPath;
+		const binPath = path.join(rootPath, 'bin');
 
-		// Терминал для запуска (ищем уже созданный нами ранее или открываем новый чистый)
-		let runTerminal = vscode.window.terminals.find(t => t.name === 'Program');
-		if (!runTerminal) {
-			runTerminal = vscode.window.createTerminal('Program');
-		}
-		runTerminal.show();
-
-		// Проверяем, существует ли CMakeLists.txt в открытом воркспейсе
-		const activeEditor = vscode.window.activeTextEditor;
-		let hasCmakeLists = false;
-		if (workspaceFolders) {
-			if (fs.existsSync(path.join(rootPath, 'CMakeLists.txt'))) {
-				hasCmakeLists = true;
-			}
-		}
-
-		// Если файл одиночный (без файловой структуры)
-		if (!hasCmakeLists) {
-			if (!activeEditor) {
-				vscode.window.showErrorMessage('Ошибка: Нет активного файла для компиляции!');
-				return;
-			}
-
-			const filePath = activeEditor.document.uri.fsPath;
-			const fileExt = path.extname(filePath);
-
-			// Проверяем, С/С++ ли это файл
-			if (fileExt !== '.cpp' && fileExt !== '.c' && fileExt !== '.cc') {
-				vscode.window.showErrorMessage('Ошибка: Активный файл не является исходным кодом C/C++');
-				return;
-			}
-
-			const fileDir = path.dirname(filePath);
-			const fileNameWithoutExt = path.basename(filePath, fileExt);
-
-			// Подготавливаем имена для исполняемого файла под разные ОС
-			let outputBinary = fileNameWithoutExt;
-			let runCommand = `./${fileNameWithoutExt}`;
-
-			if (process.platform === 'win32') {
-				outputBinary = `${fileNameWithoutExt}.exe`;
-				runCommand = `${fileNameWithoutExt}.exe`;
-			}
-
-			// Цепочка: Переходим в папку с файлом -> компилируем -> запускаем
-			const goFileDir = `cd "${fileDir}"`;
-			const compileCmd = `clang++ "${filePath}" -o "${outputBinary}"`;
-
-			runTerminal.sendText(`${goFileDir} && ${compileCmd} && ${runCommand}`);
+		// Проверяем наличие директории bin - папки с компилиремыми файлами
+		// Если папки нет - возвращаем ошибку
+		if (!fs.existsSync(binPath) || !fs.statSync(binPath).isDirectory()) {
+			vscode.window.showErrorMessage('Отсутствует директория /bin');
 			return;
 		}
 
-		// Проверяем наличие главных файлов для сборки
+		//Создаём список потенциально компилируемых файлов
+		let waysToBuildTheProject: string[] = [];
+
+		// Проверяем наличие CMakeLists.txt в корне. Если есть - добавляем в waysToBuildTheProject как вариант сборки проекта
 		const cmakePath = path.join(rootPath, 'CMakeLists.txt');
-		const mainCppPath = path.join(rootPath, 'bin', 'main.cpp');
+		if (fs.existsSync(cmakePath)) {
+			waysToBuildTheProject.push('CMake: Build the entire project');
+		}
 
-		if (!fs.existsSync(cmakePath) || !fs.existsSync(mainCppPath)) {
-			vscode.window.showErrorMessage('Ошибка сборки: В проекте отсутствуют необходимые CMakeLists.txt или bin/main.cpp. Рекомендуется проверить структуру проекта или использовать комманду CMake: Create basic project structure');
+		// Читаем список элементов внутри папки bin
+		const items = fs.readdirSync(binPath);
+		// Перебираем найденные элементы
+		for (const item of items) {
+			const fullPath = path.join(binPath, item);
+
+			// Проверяем, что это файл, а не директория
+			if (fs.statSync(fullPath).isFile()) {
+				// находим расширение файла
+				const ext = path.extname(item).toLowerCase();
+
+				// Если расширение файла совпадает с C/C++ - добавляем в массив
+				if (ext === '.cpp' || ext === '.c' || ext === '.cc') {
+					waysToBuildTheProject.push(`Build file: bin/${item}`);
+				}
+			}
+		}
+
+		// Если в корне есть CMakeLists, но в /bin нет ни одного c/cpp файла 
+		// или waysToBuildTheProject вовсе пустой - возвращаем ошибку
+		if (waysToBuildTheProject.length === 1 && waysToBuildTheProject[0] === 'CMake: Build the entire project' || waysToBuildTheProject.length === 0) {
+			vscode.window.showErrorMessage('Отсутствуют c/cpp файлы в /bin');
+			return;
+		}
+		// Если файл c/cpp один, то билдим его без выбора в меню
+		else if (waysToBuildTheProject.length === 1 && waysToBuildTheProject[0] != 'CMake: Build the entire project') {
+
+		}
+
+		// Открываем меню с выбором варианта как билдить проект
+		const selectedOption = await vscode.window.showQuickPick(waysToBuildTheProject, {
+			placeHolder: 'Выберите, что именно вы хотите скомпилировать и запустить:'
+		});
+
+		// Если пользователь нажал Esc или отменил выбор - выходим
+		if (!selectedOption) {
 			return;
 		}
 
-		// Получение названия проекта из CMakeLists.txt
-		let projectName = 'MyProject'; // Имя по умолчанию
-		try {
-			const cmakeContent = fs.readFileSync(cmakePath, 'utf8');
-			// Ищем строчку вида project(ИмяПроекта)
-			const match = cmakeContent.match(/project\s*\(\s*([a-zA-Z0-9_-]+)\s*\)/i);
+		// Проверяем, что выбрал пользователь и собираем проект
+		if (selectedOption === 'CMake: Build the entire project') {
+			const runTerminal = RunTerminal('Project');
+			// Проверяем наличие bin/main.cpp для сборки
+			const mainCppPath = path.join(rootPath, 'bin', 'main.cpp');
 
-			if (match && match[1]) {
-				projectName = match[1]; // Забираем то, что попало в круглые скобки
+			if (!fs.existsSync(mainCppPath)) {
+				vscode.window.showErrorMessage('Ошибка сборки: В проекте отсутствует необходимый файл bin/main.cpp. Рекомендуется проверить структуру проекта или использовать комманду CMake: Create basic project structure');
+				return;
 			}
-		} catch (error) {
-			console.error('Не удалось прочитать CMakeLists.txt:', error);
+
+			// Получение названия проекта из CMakeLists.txt
+			let projectName = 'MyProject'; // Имя по умолчанию
+			try {
+				const cmakeContent = fs.readFileSync(cmakePath, 'utf8');
+				// Ищем строчку вида project(ИмяПроекта)
+				const match = cmakeContent.match(/project\s*\(\s*([a-zA-Z0-9_-]+)\s*\)/i);
+
+				if (match && match[1]) {
+					projectName = match[1]; // Забираем то, что попало в круглые скобки
+				}
+			} catch (error) {
+				console.error('Не удалось прочитать CMakeLists.txt:', error);
+			}
+
+			// В зависимости от операционной системы запускаем исполняемый файл
+			let runCommand = '';
+			if (process.platform === 'win32') {
+				// Для Windows добавляем .exe
+				runCommand = `build\\bin\\${projectName}.exe`;
+			} else {
+				// Для Linux и macOS добавляем ./ в начале
+				runCommand = `./build/bin/${projectName}`;
+			}
+
+			// Проверка папки build и выбор сценария действий
+			const buildFolderPath = path.join(rootPath, 'build');
+			if (fs.existsSync(buildFolderPath)) {
+				// Если папка build уже создана - запускаем сборку
+				runTerminal.sendText(`cd "${rootPath}" && cmake --build build && ${runCommand}`);
+			} else {
+				// Если папки build нет - сначала конфигурируем CMake (-B build), затем собираем
+				vscode.window.showInformationMessage('Папка build не найдена. Полная конфигурация и сборка...');
+				runTerminal.sendText(`cd "${rootPath}" && cmake -B build && cmake --build build && ${runCommand}`);
+			}
 		}
 
-		// В зависимости от операционной системы запускаем исполняемый файл
-		let runCommand = '';
-		if (process.platform === 'win32') {
-			// Для Windows добавляем .exe
-			runCommand = `build\\bin\\${projectName}.exe`;
-		} else {
-			// Для Linux и macOS добавляем ./ в начале
-			runCommand = `./build/bin/${projectName}`;
-		}
 
-		const goRootCommand = `cd "${rootPath}"`;
 
-		// Проверка папки build и выбор сценария действий
-		const buildFolderPath = path.join(rootPath, 'build');
-		if (fs.existsSync(buildFolderPath)) {
-			// Если папка build уже создана — запускаем сборку
-			vscode.window.showInformationMessage('Папка build найдена. Запускается быстрая сборка...');
-			runTerminal.sendText(`${goRootCommand} && cmake --build build && ${runCommand}`);
-		} else {
-			// Если папки build нет — сначала конфигурируем CMake (-B build), затем собираем
-			vscode.window.showInformationMessage('Папка build не найдена. Полная конфигурация и сборка...');
-			runTerminal.sendText(`${goRootCommand} && cmake -B build && cmake --build build && ${runCommand}`);
-		}
+
+
+
+
+
+
+		
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+		// TODO: перераспределить код ниже в новые места в соответствии с новой логикой работы программы
+
+
+		// // Вызываем команду VS Code, которая сохраняет все измененные файлы
+		// // await заставляет плагин дождаться, пока все файлы сохранятся
+		// await vscode.commands.executeCommand('workbench.action.files.saveAll');
+
+		
+		
+
+		// // // Проверяем, существует ли CMakeLists.txt в открытом воркспейсе
+		// // const activeEditor = vscode.window.activeTextEditor;
+		// // let hasCmakeLists = false;
+		// // if (workspaceFolders) {
+		// // 	if (fs.existsSync(cmakePath)) {
+		// // 		hasCmakeLists = true;
+		// // 	}
+		// // }
+
+		// // // Массив опций, который мы покажем пользователю в меню сверху
+		// // const menuOptions: string[] = [];
+
+		// // // Если в корне есть CMakeLists.txt, добавляем опцию полной сборки
+		// // if (fs.existsSync(cmakePath)) {
+		// // 	menuOptions.push('CMake: Build the entire project');
+		// // }
+
+		// // // Сканируем папку bin на наличие отдельных файлов для компиляции
+		// // if (fs.existsSync(binPath)) {
+		// // 	const binFiles = fs.readdirSync(binPath);
+		// // 	for (const file of binFiles) {
+		// // 		if (file.endsWith('.cpp') || file.endsWith('.c')) {
+		// // 			menuOptions.push(`Отдельный файл: bin/${file}`);
+		// // 		}
+		// // 	}
+		// // }
+
+
+		
+
+		// // Если файл одиночный (без файловой структуры)
+		// if (!hasCmakeLists) {
+		// 	if (!activeEditor) {
+		// 		vscode.window.showErrorMessage('Ошибка: Нет активного файла для компиляции!');
+		// 		return;
+		// 	}
+
+		// 	const filePath = activeEditor.document.uri.fsPath;
+		// 	const fileExt = path.extname(filePath);
+
+		// 	// Проверяем, С/С++ ли это файл
+		// 	if (fileExt !== '.cpp' && fileExt !== '.c' && fileExt !== '.cc') {
+		// 		vscode.window.showErrorMessage('Ошибка: Активный файл не является исходным кодом C/C++');
+		// 		return;
+		// 	}
+
+		// 	const fileDir = path.dirname(filePath);
+		// 	const fileNameWithoutExt = path.basename(filePath, fileExt);
+
+		// 	// Подготавливаем имена для исполняемого файла под разные ОС
+		// 	let outputBinary = fileNameWithoutExt;
+		// 	let runCommand = `./${fileNameWithoutExt}`;
+
+		// 	if (process.platform === 'win32') {
+		// 		outputBinary = `${fileNameWithoutExt}.exe`;
+		// 		runCommand = `${fileNameWithoutExt}.exe`;
+		// 	}
+
+		// 	// Цепочка: Переходим в папку с файлом -> компилируем -> запускаем
+		// 	const goFileDir = `cd "${fileDir}"`;
+		// 	const compileCmd = `clang++ "${filePath}" -o "${outputBinary}"`;
+
+		// 	runTerminal.sendText(`${goFileDir} && ${compileCmd} && ${runCommand}`);
+		// 	return;
+		// }
+
+
+
+
+
+		// // Проверяем наличие главных файлов для сборки
+		// // const cmakePath = path.join(rootPath, 'CMakeLists.txt');
+		// const mainCppPath = path.join(rootPath, 'bin', 'main.cpp');
+
+		// if (!fs.existsSync(cmakePath) || !fs.existsSync(mainCppPath)) {
+		// 	vscode.window.showErrorMessage('Ошибка сборки: В проекте отсутствуют необходимые CMakeLists.txt или bin/main.cpp. Рекомендуется проверить структуру проекта или использовать комманду CMake: Create basic project structure');
+		// 	return;
+		// }
+
+		// // Получение названия проекта из CMakeLists.txt
+		// let projectName = 'MyProject'; // Имя по умолчанию
+		// try {
+		// 	const cmakeContent = fs.readFileSync(cmakePath, 'utf8');
+		// 	// Ищем строчку вида project(ИмяПроекта)
+		// 	const match = cmakeContent.match(/project\s*\(\s*([a-zA-Z0-9_-]+)\s*\)/i);
+
+		// 	if (match && match[1]) {
+		// 		projectName = match[1]; // Забираем то, что попало в круглые скобки
+		// 	}
+		// } catch (error) {
+		// 	console.error('Не удалось прочитать CMakeLists.txt:', error);
+		// }
+
+		// // В зависимости от операционной системы запускаем исполняемый файл
+		// let runCommand = '';
+		// if (process.platform === 'win32') {
+		// 	// Для Windows добавляем .exe
+		// 	runCommand = `build\\bin\\${projectName}.exe`;
+		// } else {
+		// 	// Для Linux и macOS добавляем ./ в начале
+		// 	runCommand = `./build/bin/${projectName}`;
+		// }
+
+		// const goRootCommand = `cd "${rootPath}"`;
+
+		// // Проверка папки build и выбор сценария действий
+		// const buildFolderPath = path.join(rootPath, 'build');
+		// if (fs.existsSync(buildFolderPath)) {
+		// 	// Если папка build уже создана — запускаем сборку
+		// 	vscode.window.showInformationMessage('Папка build найдена. Запускается быстрая сборка...');
+		// 	runTerminal.sendText(`${goRootCommand} && cmake --build build && ${runCommand}`);
+		// } else {
+		// 	// Если папки build нет — сначала конфигурируем CMake (-B build), затем собираем
+		// 	vscode.window.showInformationMessage('Папка build не найдена. Полная конфигурация и сборка...');
+		// 	runTerminal.sendText(`${goRootCommand} && cmake -B build && cmake --build build && ${runCommand}`);
+		// }
 	});
 
 	// Регистрация команды, которая создаёт базовую структуру проекта: папки, файлы cmake, main.cpp и README.md
@@ -197,3 +348,13 @@ export function activate(context: vscode.ExtensionContext) {
 
 // This method is called when your extension is deactivated
 export function deactivate() {}
+
+function RunTerminal(terminalName: string) {
+	// Терминал для запуска (ищем созданный ранее или открываем новый)
+	let runTerminal = vscode.window.terminals.find(t => t.name === `${terminalName}`);
+	if (!runTerminal) {
+		runTerminal = vscode.window.createTerminal(`${terminalName}`);
+	}
+	runTerminal.show();
+	return runTerminal;
+}
