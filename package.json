@@ -31,7 +31,8 @@
       "editor/title": [
         {
           "command": "autobuilder-for-c.buildProject",
-          "group": "navigation"
+          "group": "navigation",
+          "when": "editorLangId == cpp || editorLangId == c"
         }
       ]
     }
