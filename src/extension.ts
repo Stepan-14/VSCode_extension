@@ -118,7 +118,6 @@ export function activate(context: vscode.ExtensionContext) {
 				runTerminal.sendText(`cd "${rootPath}" && cmake --build build && ${runCommand}`);
 			} else {
 				// Если папки build нет - сначала конфигурируем CMake (-B build), затем собираем
-				vscode.window.showInformationMessage('Папка build не найдена. Полная конфигурация и сборка...');
 				runTerminal.sendText(`cd "${rootPath}" && cmake -B build && cmake --build build && ${runCommand}`);
 			}
 		}
@@ -135,7 +134,7 @@ export function activate(context: vscode.ExtensionContext) {
 		// Проверяем, открыта ли папка в VS Code
 		const workspaceFolders = vscode.workspace.workspaceFolders;
 		if (!workspaceFolders) {
-			vscode.window.showErrorMessage('Пожалуйста, сначала откройте пустую папку в VS Code!');
+			vscode.window.showErrorMessage('Пожалуйста, сначала откройте пустую папку в VS Code');
 			return;
 		}
 
