@@ -1,9 +1,7 @@
 # Change Log
 
-All notable changes to the "autobuilder-for-c" extension will be documented in this file.
+- README.md updated
 
-Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
+## Versions
 
-## [Unreleased]
-
-- Initial release
+- V0.0.2 - README.md updated: added a bunch of new information about the project and how to use it
