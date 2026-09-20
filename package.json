@@ -2,7 +2,7 @@
   "name": "autobuilder-for-c",
   "displayName": "AutoBuilder for c++",
   "description": "Useful extension that allows you to build projects automatically without ever using command line",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "engines": {
     "vscode": "^1.137.0"
   },
